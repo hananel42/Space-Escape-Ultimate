@@ -10,7 +10,12 @@
 
     {
       "src": "Screenshot_20250325-090314~2 (1).png",
-      "sizes": "1024x1024",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "Screenshot_20250325-090314~2 (1).png",
+      "sizes": "192x192",
       "type": "image/png"
     }
   ]
