@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Space Escape Ultimate</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body, html {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #000;
+            overflow: hidden;
+            height: 100vh;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+        }
+        #gameCanvas {
+            background-color: #000;
+            display: block;
+        }
+        #score, #high-score {
+            position: absolute;
+            top: 10px;
+            font-size: 24px;
+            color: #ffffff;
+        }
+        #high-score {
+            top: 40px;
+        }
+        #restart-button {
+            position: absolute;
+            top: 70px;
+            padding: 10px 20px;
+            font-size: 18px;
+            color: #ffffff;
+            background-color: #61dafb;
+            border: none;
+            cursor: pointer;
+            display: none;
+            outline: none;
+        }
+        #restart-button:hover {
+            background-color: #21a1f1;
+        }
+    </style>
+</head>
+<body>
+
+<div id="score">Score: 0</div>
+<div id="high-score">High Score: 0</div>
+<button id="restart-button" onclick="restartGame()">Play Again</button>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+    
+    
+
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const scoreDisplay = document.getElementById("score");
+    const highScoreDisplay = document.getElementById("high-score");
+    const restartButton = document.getElementById("restart-button");
+
+    let highScore = localStorage.getItem("highScore") || 0;
+    highScoreDisplay.innerText = `High Score: ${highScore}`;
+    function goFullscreen() {
+    if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen();
+    } else if (document.documentElement.mozRequestFullScreen) { // פיירפוקס
+        document.documentElement.mozRequestFullScreen();
+    } else if (document.documentElement.webkitRequestFullscreen) { // כרום, ספארי
+        document.documentElement.webkitRequestFullscreen();
+    } else if (document.documentElement.msRequestFullscreen) { // אינטרנט אקספלורר
+        document.documentElement.msRequestFullscreen();
+    }
+}
+    document.addEventListener("click", function () {
+
+     goFullscreen();
+}, { once: true });
+    document.addEventListener("fullscreenchange", () => {
+    if (!document.fullscreenElement) {
+        document.addEventListener("click", function () {
+
+     goFullscreen();
+}, { once: true });
+    }
+});
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
+    document.body.addEventListener('touchmove', function (event) {
+            event.preventDefault();
+        }, { passive: false });
+    const spaceship = { 
+        x: canvas.width / 2, 
+        y: canvas.height - 80, 
+        size: 30, 
+        shieldActive: false, 
+        shieldTime: 0, 
+        shootPowerLevel: 1,
+        doubleShield: false,
+        rapidFire: false, // temporary rapid fire for 5 seconds
+        rapidFireTime: 0,
+        rapidDoubleFireTime: 0
+    };
+    let asteroids = [];
+    let stars = [];
+    let bullets = [];
+    let score = 0;
+    let gameSpeed = 1.5;
+    let difficultyLevel = 0;
+    let gameActive = true;
+    let bulletInterval = 30;
+    // משתנים לאחסון מצב המקשים
+const keys = {
+    ArrowLeft: false,
+    ArrowRight: false,
+    ArrowUp: false,
+    ArrowDown: false
+};
+
+// האזנה ללחיצת מקש
+document.addEventListener("keydown", (event) => {
+    if (event.key in keys) {
+        keys[event.key] = true;
+    }
+});
+
+// האזנה לשחרור מקש
+document.addEventListener("keyup", (event) => {
+    if (event.key in keys) {
+        keys[event.key] = false;
+    }
+});
+
+// עדכון מיקום החללית
+function moveSpaceship() {
+    const speed = 2; // מהירות התנועה
+    if (keys.ArrowLeft && spaceship.x > 0) {
+        spaceship.x -= speed;
+    }
+    if (keys.ArrowRight && spaceship.x < canvas.width) {
+        spaceship.x += speed;
+    }
+    if (keys.ArrowUp && spaceship.y > 0) {
+        spaceship.y -= speed+1;
+    }
+    if (keys.ArrowDown && spaceship.y < canvas.height) {
+        spaceship.y += speed+2;
+    }
+}
+    function increaseDifficulty() {
+        difficultyLevel++;
+        gameSpeed += 0.5;
+    }
+
+    function createAsteroids() {
+        const asteroidTypes = [
+            { size: 20, speed: gameSpeed, health: difficultyLevel+1, rotationSpeed: 0.05, diagonal: false },
+            { size: 30, speed: gameSpeed * 0.7, health: difficultyLevel+2, rotationSpeed: 0.02, diagonal: true },
+            { size: 15, speed: Math.min(gameSpeed * difficultyLevel,7), health: difficultyLevel, rotationSpeed: 0.1, diagonal: false}
+        ];
+        if (asteroids.length < 5 + 2*difficultyLevel) {
+            const type = asteroidTypes[Math.floor(Math.random() * asteroidTypes.length)];
+            asteroids.push({
+                x: Math.random() * (canvas.width - 40) + 20,
+                y: -20,
+                size: type.size,
+                speed: type.speed + (spaceship.shootPowerLevel > 1 ? 1 : 0),
+                health: type.health,
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: type.rotationSpeed,
+                diagonal: type.diagonal,
+                gr: Math.random()<=0.5 ? true:false
+            });
+        }
+    }
+
+    function createPowerUp(type) {
+        stars.push({
+            x: Math.random() * (canvas.width - 20),
+            y: -20,
+            size: 12,
+            type: type,
+            speed: gameSpeed + 0.5,
+            glowPhase: Math.random() * 2 * Math.PI
+        });
+    }
+
+    function drawSpaceship() {
+        ctx.save();
+        ctx.translate(spaceship.x, spaceship.y);
+
+        ctx.beginPath();
+        ctx.moveTo(0, -spaceship.size);
+        ctx.lineTo(-spaceship.size / 2, spaceship.size / 2);
+        ctx.lineTo(spaceship.size / 2, spaceship.size / 2);
+        ctx.closePath();
+        ctx.fillStyle = spaceship.shieldActive ? "rgba(0,255,255,0.8)" : "white";
+        ctx.shadowColor = spaceship.rapidFire ? "#FF0000" : "#00D700";
+        ctx.shadowBlur = spaceship.shieldActive || spaceship.rapidFire ? 20 : 0;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(-spaceship.size / 2.5, spaceship.size / 2);
+        ctx.lineTo(-spaceship.size / 1.5, spaceship.size / 1.2);
+        ctx.lineTo(-spaceship.size / 2.5, spaceship.size / 1.5);
+        ctx.closePath();
+        ctx.fillStyle = "#FF6347";
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(spaceship.size / 2.5, spaceship.size / 2);
+        ctx.lineTo(spaceship.size / 1.5, spaceship.size / 1.2);
+        ctx.lineTo(spaceship.size / 2.5, spaceship.size / 1.5);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(0, -spaceship.size / 2, spaceship.size / 6, 0, Math.PI * 2);
+        ctx.fillStyle = "#87CEEB";
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        
+        ctx.restore();
+        if (spaceship.shootPowerLevel>1) {
+          ctx.fillStyle="red";
+          ctx.fillRect(spaceship.x+5.6,spaceship.y-5,5,20);
+          ctx.fillRect(spaceship.x-11.4,spaceship.y-5,5,20);
+          
+        }
+    }
+
+    function drawAsteroids() {
+        asteroids.forEach((asteroid) => {
+            asteroid.y += asteroid.speed;
+            asteroid.x += asteroid.diagonal ? (asteroid.gr ? asteroid.speed / 2:-asteroid.speed/2) : 0;
+            asteroid.rotation += asteroid.rotationSpeed;
+
+            ctx.save();
+            ctx.translate(asteroid.x, asteroid.y);
+            ctx.rotate(asteroid.rotation);
+            ctx.fillStyle = `rgba(169, 169, 169, ${asteroid.health / 2})`; // color based on health
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+                const angle = i * Math.PI / 3;
+                const x = asteroid.size * Math.cos(angle);
+                const y = asteroid.size * Math.sin(angle);
+                ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.shadowColor = "#696969";
+            ctx.shadowBlur = 10;
+            ctx.fill();
+            ctx.restore();
+        });
+    }
+
+    function drawStarsAndPowerUps() {
+        stars.forEach((star) => {
+            star.y += star.speed;
+            ctx.fillStyle = star.type === "shield" ? "cyan" :star.type==="shoot" ? "gold":star.type==="bo" ? "black":"red";
+            ctx.beginPath();
+            ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+            ctx.shadowColor = star.type === "shoot" ?  "#FFD700" : "#00FFFF";
+            ctx.shadowBlur = 15;
+            ctx.fill();
+            ctx.closePath();
+            star.glowPhase += 0.1;
+        });
+    }
+
+    function drawBullets() {
+        bullets.forEach((bullet) => {
+            bullet.y -= bullet.speed;
+            bullet.x-= bullet.xspeed;
+            ctx.fillStyle = bullet.d ===1 ? "#FF6347" : bullet.d===2 ? "gold":"blue";
+            ctx.shadowColor = "#FF4500";
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(bullet.x, bullet.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.closePath();
+        });
+    }
+
+    function detectCollisions() {
+        asteroids.forEach((asteroid, aIndex) => {
+            const dist = Math.hypot(spaceship.x - asteroid.x, spaceship.y - asteroid.y);
+            if (dist < spaceship.size + asteroid.size / 2) {
+                if (spaceship.shieldActive) {
+                    ctx.fillStyle="red";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    if (spaceship.doubleShield) {
+                        spaceship.doubleShield = false;
+                    } else {
+                        spaceship.shieldActive = false;
+                        spaceship.shieldTime = 0;
+                    }
+                    asteroids.splice(aIndex, 1);
+                } else {
+                    endGame();
+                }
+            }
+            bullets.forEach((bullet, bIndex) => {
+                const bulletDist = Math.hypot(bullet.x - asteroid.x, bullet.y - asteroid.y);
+                if (bulletDist < asteroid.size / 2) {
+                    asteroid.health -= bullet.d;  // Decrease health on hit
+                    if (asteroid.health <= 0) {
+                        if (Math.random()<0.2/difficultyLevel){ stars.push({x: asteroid.x,y: asteroid.y,size: 12,type: "shoot",speed: gameSpeed + 0.5,glowPhase: Math.random() * 2 * Math.PI});}else if (Math.random()<0.1/difficultyLevel){ stars.push({x: asteroid.x,y: asteroid.y,size: 12,type: "do",speed: gameSpeed + 0.5,glowPhase: Math.random() * 2 * Math.PI});}else if (Math.random()<0.05/difficultyLevel){ stars.push({x: asteroid.x,y: asteroid.y,size: 12,type: "bo",speed: gameSpeed + 0.1,glowPhase: Math.random() * 2 * Math.PI});}
+                        asteroids.splice(aIndex, 1);
+                        if (difficultyLevel>3 && asteroid.size>15){
+                          bullets.push({ x:bullet.x, y: bullet.y - 3, speed: gameSpeed,xspeed:12,d:1});
+                          bullets.push({ x:bullet.x, y: bullet.y - 3, speed: gameSpeed,xspeed:-12,d:1});
+                          asteroids.push({ x: asteroid.x, y: asteroid.y, size: asteroid.size-10, speed: 7, health: 1, rotation: Math.random() * Math.PI * 2,rotationSpeed: 0.1, diagonal: false,gr:false});
+                          if (difficultyLevel>7) asteroids.push({ x: asteroid.x, y: asteroid.y, size: asteroid.size-10, speed: 7, health: 1, rotation: Math.random() * Math.PI * 2,rotationSpeed: 0.1, diagonal: true,gr:Math.random()<=0.5 ? true:false});
+                        }
+                    }
+                    if (bullet.d<100) bullets.splice(bIndex, 1);
+                }
+            });
+        });
+
+        stars.forEach((star, index) => {
+            const dist = Math.hypot(spaceship.x - star.x, spaceship.y - star.y);
+            if (dist < spaceship.size) {
+                if (star.type === "shield") {
+                    spaceship.shieldActive = true;
+                    spaceship.doubleShield = spaceship.doubleShield ? true : Math.random() < 0.5;
+                }
+                if (star.type === "shoot") {
+                    spaceship.rapidFire = true;
+                    spaceship.rapidFireTime += 300; // Rapid fire for 5 seconds
+                    
+                    bulletInterval = bulletInterval>3 ? bulletInterval-5: 0;  // Faster shooting interval
+                }
+                if (star.type === "bo") {
+    let bulletCount = 50; // כמות היריות במעגל
+    let bulletSpeed = 7; // מהירות היריות
+
+    for (let i = 0; i < bulletCount; i++) {
+        let angle = (i / bulletCount) * (2 * Math.PI); // מחלק את המעגל ליריות שוות
+        let xSpeed = Math.cos(angle) * bulletSpeed;
+        let Speed = Math.sin(angle) * bulletSpeed;
+
+        bullets.push({
+            x: spaceship.x,
+            y: spaceship.y,
+            speed: bulletSpeed,
+            xspeed: xSpeed,
+            speed: Speed,
+            d:1000
+        });
+    }
+}
+
+                if (star.type==="do"){
+                  
+                  spaceship.rapidDoubleFireTime=500;
+                  spaceship.shootPowerLevel+= spaceship.shootPowerLevel<5 ? 1:0.5;
+                }
+                
+                stars.splice(index, 1);
+            }
+        });
+    }
+
+    function updateGame() {
+        if (!gameActive) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if(score%900==0) increaseDifficulty();
+        ctx.fillStyle = "#FF6347";
+        ctx.fillRect(0,canvas.height-10,(spaceship.rapidDoubleFireTime/500)*canvas.width,2)
+        ctx.fillStyle = "gold";
+        ctx.fillRect(0,canvas.height-12,(spaceship.rapidFireTime/1000)*canvas.width,2)
+        moveSpaceship();
+        drawSpaceship();
+        
+        drawStarsAndPowerUps();
+        drawBullets();
+        drawAsteroids();
+        updateElements();
+        detectCollisions();
+        
+        // Handle shooting intervals based on rapid fire
+        if (score % Math.floor(bulletInterval) === 0 || Math.floor(bulletInterval)===0) {
+            
+            
+            for (let i = 0; i < Math.min(4,spaceship.shootPowerLevel); i++) {
+                bullets.push({ x: spaceship.x - i * 15 + (spaceship.shootPowerLevel * 5)-3.5, y: spaceship.y - spaceship.size, speed: 9,xspeed:0 ,d:1});
+            }
+        }
+        if (spaceship.shootPowerLevel>4 && score % 50 === 0){
+          spaceship.shootPowerLevel-=0.5;
+          for (let i = 0; i < 10; i++) {
+        let angle = (i / 10) * (2 * Math.PI); // מחלק את המעגל ליריות שוות
+        let xSpeed = Math.cos(angle) * 9;
+        let Speed = Math.sin(angle) * 9;
+
+        bullets.push({
+            x: spaceship.x+Math.sin(spaceship.x),
+            y: spaceship.y+Math.cos(spaceship.y),
+            speed: 9,
+            xspeed: xSpeed,
+            speed: Speed,
+            d:2
+        });
+    }
+        }
+        if (spaceship.rapidDoubleFireTime){spaceship.rapidDoubleFireTime--;if (spaceship.rapidDoubleFireTime===0){spaceship.shootPowerLevel=1;}}
+        if (spaceship.rapidFire) {
+            spaceship.rapidFireTime--;
+            if (spaceship.rapidFireTime <= 0) {
+                spaceship.rapidFire = false;
+                spaceship.shootPowerLevel=1;
+                bulletInterval = Math.max(30,bulletInterval); // Reset to normal interval
+            }
+        }
+        bulletInterval+=0.001;
+        score++;
+        scoreDisplay.innerText = "Score: " + score;
+
+        requestAnimationFrame(updateGame);
+    }
+    
+    function updateElements() {
+        asteroids = asteroids.filter((asteroid) => asteroid.y < canvas.height);
+        stars = stars.filter((star) => star.y < canvas.height);
+        bullets = bullets.filter((bullet) => bullet.y > 0);
+
+        createAsteroids();
+        // Reduce power-up frequency as difficulty level increases
+        if (Math.random() < 0.002 / difficultyLevel) createPowerUp("shield");
+        if (Math.random() < 0.004 / difficultyLevel) createPowerUp("shoot");
+    }
+
+    function endGame() {
+        gameActive = false;
+        if (score > highScore) {
+            highScore = score;
+            localStorage.setItem("highScore", highScore);
+            highScoreDisplay.innerText = "High Score: " + highScore;
+        }
+        restartButton.style.display = "block";
+        restartButton.focus();
+    }
+
+    function restartGame() {
+        score = 0;
+        difficultyLevel=0;
+        gameSpeed=1.5;
+        gameActive = true;
+        spaceship.shootPowerLevel = 1;
+        bulletInterval = 30;
+        spaceship.rapidFire = false;
+        spaceship.shieldActive = false;
+        spaceship.rapidFireTime = 0;
+        spaceship.rapidDoubleFireTime =0;
+        asteroids = [];
+        stars = [];
+        bullets = [];
+        restartButton.style.display = "none";
+        spaceship.x=canvas.width/2;
+        spaceship.y=canvas.height-80;
+        updateGame();
+    }
+    canvas.addEventListener("mousemove", (event) => {
+    let rect = canvas.getBoundingClientRect(); // מקבלים את גבולות הקנבס
+    let mouseX = event.clientX - rect.left; // מיקום העכבר ב-X בתוך הקנבס
+    let mouseY = event.clientY - rect.top;  // מיקום העכבר ב-Y בתוך הקנבס
+
+    // מוודאים שהחללית לא יוצאת מגבולות הקנבס
+    if (mouseX < 0) {
+        spaceship.x = 0;
+    } else if (mouseX > canvas.width - spaceship.size) {
+        spaceship.x = canvas.width - spaceship.size;
+    } else {
+        spaceship.x = mouseX;
+    }
+
+    if (mouseY < 0) {
+        spaceship.y = 0;
+    } else if (mouseY > canvas.height - spaceship.size) {
+        spaceship.y = canvas.height - spaceship.size;
+    } else {
+        spaceship.y = mouseY;
+    }
+});
+
+
+    canvas.addEventListener("touchmove", (e) => {
+        const touchX = e.touches[0].clientX;
+        const touchY = e.touches[0].clientY;
+        spaceship.x = touchX;
+        spaceship.y = touchY;
+    });
+
+    updateGame();
+</script>
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/27/service-worker.js")
+      .then(() => console.log("Service Worker Registered"))
+      .catch((error) => console.log("Service Worker Registration Failed:", error));
+  }
+</script>
+  
+</body>
+</html>
+
+  
